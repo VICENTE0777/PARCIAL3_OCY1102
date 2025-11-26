@@ -1,66 +1,54 @@
 pipeline {
-    agent any
+  agent any
 
-    environment {
-        APP_IMAGE = "parcial3_ocy1102-app"
-        NETWORK = "parcial3_ocy1102_ci_network"
-        TEMP_CONTAINER = "secure_app_temp"
-        ZAP_CONTAINER = "zap"
+  stages {
+    stage('Build Docker Image') {
+      steps {
+        sh '''
+          echo === BUILDING DOCKER IMAGE ===
+          docker build -t parcial3_ocy1102-app -f app/Dockerfile .
+        '''
+      }
     }
 
-    stages {
-
-        stage('Build Docker Image') {
-            steps {
-                sh '''
-                echo "=== BUILDING DOCKER IMAGE ==="
-                docker build -t $APP_IMAGE ./app
-                '''
-            }
-        }
-
-        stage('Run Temporary App Container') {
-            steps {
-                sh '''
-                echo "=== RUNNING TEMPORARY CONTAINER ==="
-                docker rm -f $TEMP_CONTAINER || true
-                docker run -d --name $TEMP_CONTAINER --network $NETWORK -p 5000:5000 $APP_IMAGE
-                sleep 5
-                '''
-            }
-        }
-
-        stage('Security Scan with OWASP ZAP') {
-            steps {
-                sh '''
-                echo "=== STARTING ZAP SECURITY SCAN ==="
-
-                docker exec $ZAP_CONTAINER zap-cli --api-key 12345 status -t 120
-                docker exec $ZAP_CONTAINER zap-cli --api-key 12345 spider http://secure_app_temp:5000
-                docker exec $ZAP_CONTAINER zap-cli --api-key 12345 active-scan http://secure_app_temp:5000
-
-                docker exec $ZAP_CONTAINER zap-cli --api-key 12345 report -o /zap/reports/security_report.html -f html
-                '''
-            }
-        }
-
-        stage('Generate Report') {
-            steps {
-                sh '''
-                echo "=== COPYING SECURITY REPORT ==="
-
-                docker cp $ZAP_CONTAINER:/zap/reports/security_report.html ./security_report.html
-                '''
-            }
-        }
+    stage('Run Temporary App Container') {
+      steps {
+        sh '''
+          echo === RUNNING TEMPORARY CONTAINER ===
+          docker rm -f secure_app_temp || true
+          docker run -d --name secure_app_temp --network parcial3_ocy1102_ci_network -p 5000:5000 parcial3_ocy1102-app
+          sleep 5
+        '''
+      }
     }
 
-    post {
-        always {
-            sh '''
-            echo "=== CLEANING UP ==="
-            docker rm -f $TEMP_CONTAINER || true
-            '''
-        }
+    stage('Security Scan with OWASP ZAP') {
+      steps {
+        sh '''
+          echo === RUNNING ZAP SCAN ===
+          docker run --rm --network parcial3_ocy1102_ci_network \
+            -v $WORKSPACE:/zap/wrk \
+            ghcr.io/zaproxy/zaproxy:stable zap-baseline.py \
+            -t http://secure_app_temp:5000 \
+            -r zap_report.html
+        '''
+      }
     }
+
+    stage('Archive Report') {
+      steps {
+        echo "=== ARCHIVING REPORT ==="
+        archiveArtifacts artifacts: 'zap_report.html', fingerprint: true
+      }
+    }
+
+    stage('Cleanup') {
+      steps {
+        sh '''
+          echo === CLEANING UP ===
+          docker rm -f secure_app_temp || true
+        '''
+      }
+    }
+  }
 }
