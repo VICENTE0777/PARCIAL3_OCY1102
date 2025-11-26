@@ -1,0 +1,28 @@
+<!doctype html>
+<html lang="es">
+<head>
+  <meta charset="utf-8">
+  <title>Tareas</title>
+</head>
+<body>
+  <h1>Tareas</h1>
+
+  <p>Usuario: {% if session.get('user_id') %}{{ session.get('user_id') }}{% else %}Invitado{% endif %}</p>
+  <p><a href="{{ url_for('logout') }}">Cerrar sesión</a></p>
+
+  <form method="POST" action="{{ url_for('add') }}">
+    <input name="task" placeholder="Nueva tarea" required>
+    <button type="submit">Añadir</button>
+  </form>
+
+  {% if tasks %}
+    <ul>
+    {% for t in tasks %}
+      <li>{{ t["task"]|e }} <a href="{{ url_for('delete', id=t['id']) }}">Eliminar</a></li>
+    {% endfor %}
+    </ul>
+  {% else %}
+    <p>No tienes tareas aún.</p>
+  {% endif %}
+</body>
+</html>
